@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install NASM
         run: sudo apt-get update && sudo apt-get install -y nasm
@@ -27,7 +27,7 @@ jobs:
         run: make test
 
       - name: Upload boot image
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: boot-bin
           path: boot.bin
@@ -39,7 +39,7 @@ jobs:
     needs: build-and-test
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install NASM and QEMU
         run: |
@@ -51,5 +51,5 @@ jobs:
 
       - name: Boot in QEMU and check VGA output
         env:
-          QEMU_DEBUG: "1"
+          REQUIRE_QEMU: "1"
         run: make smoke

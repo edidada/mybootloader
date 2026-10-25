@@ -115,6 +115,9 @@ def main(argv: list[str]) -> int:
 
     qemu = os.environ.get("QEMU") or find_qemu()
     if not qemu:
+        if os.environ.get("REQUIRE_QEMU"):
+            print("FAIL: 未找到 qemu-system-x86_64（REQUIRE_QEMU 已设置）")
+            return 1
         print("SKIP: 未找到 qemu-system-x86_64，跳过启动测试")
         return 0
 

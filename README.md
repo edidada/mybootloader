@@ -1,5 +1,7 @@
 # mybootloader
 
+[![CI](https://github.com/edidada/mybootloader/actions/workflows/ci.yml/badge.svg)](https://github.com/edidada/mybootloader/actions/workflows/ci.yml)
+
 一个用 NASM 汇编编写的 512 字节 BIOS Bootloader。它会在 QEMU 中启动，打印一行字符串，然后停机。项目同时提供构建脚本、静态校验、QEMU 启动冒烟测试和 GitHub Actions CI。
 
 ## 项目结构
@@ -113,7 +115,7 @@ make test    # 静态校验：512 字节、0xAA55 签名、字符串、cli/hlt �
 make smoke   # 在 QEMU 中真实启动，读取 VGA 文本缓冲区验证输出
 ```
 
-`make smoke` 依赖 `qemu-system-x86_64`（或 `qemu-system-i386`）；未安装时会输出 `SKIP` 并以成功状态退出，方便本地开发。
+`make smoke` 依赖 `qemu-system-x86_64`（或 `qemu-system-i386`）；未安装时会输出 `SKIP` 并以成功状态退出，方便本地开发。CI 中设置 `REQUIRE_QEMU=1`，确保缺少 QEMU 时直接失败而不是跳过。
 
 ## 持续集成
 
