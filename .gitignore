@@ -3,6 +3,9 @@ boot.bin
 *.img
 build/
 dist/
+uefi/BOOTX64.EFI
+tests/payload.efi
+*.o
 
 # Python
 __pycache__/
