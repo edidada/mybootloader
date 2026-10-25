@@ -197,7 +197,9 @@ struct EFI_BOOT_SERVICES {
 
     EFI_STATUS (EFIAPI *Stall)(UINTN Microseconds);
 
-    VOID *SetWatchdogTimer;
+    EFI_STATUS (EFIAPI *SetWatchdogTimer)(UINTN Timeout, UINT64 WatchdogCode,
+                                          UINTN DataSize,
+                                          CHAR16 *WatchdogData);
     VOID *ConnectController;
     VOID *DisconnectController;
     VOID *OpenProtocol;

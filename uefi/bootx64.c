@@ -370,9 +370,15 @@ static void shutdown_system(void)
 static void firmware_setup(void)
 {
     CHAR16 name[16];
-    UINT64 indications = EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+    UINT64 indications = 0;
+    UINTN indications_size = sizeof(indications);
+    UINT32 attributes = 0;
 
     ascii_to_wide("OsIndications", name, sizeof(name) / sizeof(name[0]));
+    g_rt->GetVariable(name, (EFI_GUID *)&g_efi_global_variable_guid,
+                      &attributes, &indications_size, &indications);
+    indications |= EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+
     EFI_STATUS status = g_rt->SetVariable(
         name, (EFI_GUID *)&g_efi_global_variable_guid,
         EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS |
@@ -475,6 +481,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image_handle, EFI_SYSTEM_TABLE *system_tab
     g_rt = system_table->RuntimeServices;
 
     serial_init();
+    g_bs->SetWatchdogTimer(0, 0, 0, 0); /* 避免菜单停留过久被固件看门狗重启 */
     if (g_st->ConOut) {
         g_st->ConOut->ClearScreen(g_st->ConOut);
     }

@@ -126,8 +126,9 @@ Windows 下可以用 Rufus 选择该镜像，并以 **DD 模式** 写入。
    manage-bde -protectors -get C:
    ```
    修改 Secure Boot 可能触发恢复界面。
-2. 开机时按 **F2** 进入 BIOS。
+2. 开机时按 **F2** 进入 BIOS（部分机型需要 **Fn+F2**，或关机后按 Novo 小孔）。
 3. 进入 **Security → Secure Boot**，设置为 **Disabled**。
+   - 如果该选项是灰色的，先把 **Secure Boot Mode** 改为 **Custom**，或先设置 BIOS 管理员密码。
 4. 保存并退出（F10）。
 5. 插入 U 盘，开机按 **F12** 选择启动项：
    - `USB HDD`
@@ -204,6 +205,11 @@ make uefi-smoke
 
 CI 中会设置 `REQUIRE_QEMU=1`，缺少 QEMU/OVMF 时直接失败而不是跳过。
 
+每次 push 后，可以在 GitHub Actions 的运行页面下载两个产物：
+
+- `bootx64-efi`：单独的 `BOOTX64.EFI`
+- `thinkbook-usb-image`：已经包含 `EFI/BOOT/BOOTX64.EFI` 的 64 MiB GPT+ESP 镜像
+
 > OVMF 测试通过只能说明标准 UEFI 路径正确，不能替代真机测试。
 > 真机首次测试前请准备好 Windows 安装 U 盘或恢复密钥。
 
@@ -221,7 +227,7 @@ ThinkBook 2024 这类纯 UEFI 机器上启动。
 | 现象 | 排查方向 |
 |---|---|
 | F12 菜单里没有 U 盘 | 确认 FAT32、`EFI/BOOT/BOOTX64.EFI` 路径正确；换 USB 2.0 端口；关闭 Fast Boot；确认 USB Boot 已启用 |
-| `Secure Boot Violation` / 直接跳过 U 盘 | Secure Boot 未关闭或未保存；先备份 BitLocker 密钥再关闭 |
+| `Secure Boot Violation` / 直接跳过 U 盘 | Secure Boot 未关闭或未保存；先备份 BitLocker 密钥再关闭；选项灰色时把 Secure Boot Mode 改为 Custom |
 | 出现菜单但提示 Windows 找不到 | 内置硬盘 ESP 中没有 `\EFI\Microsoft\Boot\bootmgfw.efi`；确认 Windows 是 UEFI 安装；BitLocker 加密不影响文件存在性 |
 | 启动后黑屏/立刻返回固件 | U 盘文件不完整；重新复制；确认是 x86-64 ThinkBook，不是 ARM 型号 |
 | 键盘无响应 | 尝试另一个 USB 端口；部分扩展坞/USB Hub 在固件阶段不可用 |
