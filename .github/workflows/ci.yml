@@ -50,4 +50,6 @@ jobs:
         run: make build
 
       - name: Boot in QEMU and check VGA output
+        env:
+          QEMU_DEBUG: "1"
         run: make smoke
