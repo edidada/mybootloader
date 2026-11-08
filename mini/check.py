@@ -4,7 +4,7 @@
 用法:
   python check.py static boot.bin            静态检查引导扇区
   python check.py smoke  mini.img sector    验证第 2 扇区被读入 0x7E00
-  python check.py smoke  mini.img kernel    验证跳转内核后 VGA 打印 'K'
+  python check.py smoke  mini.img kernel    验证内核被读入且跳转后 VGA 打印 'K'
 
 静态检查项:
   * 恰好 512 字节，偏移 510 处为 55 AA 引导签名
@@ -14,7 +14,7 @@
 烟测原理: 以 -display none -monitor stdio 启动 QEMU，用 monitor 的 xp
 命令轮询读取指定物理内存，判断预期内容是否出现。
   * sector: 读 0x7E00 的 512 字节，与镜像第 2 扇区比对
-  * kernel: 读 0xB8000 的 VGA 文本缓冲区，查找内核打印的 'K'
+  * kernel: 先比对 0x7E00（读盘），再查 0xB8000 的 VGA 文本（跳转执行）
 """
 
 from __future__ import annotations
@@ -26,7 +26,9 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 SECTOR = 512
 LOAD_ADDR = 0x7E00
@@ -36,6 +38,15 @@ KERNEL_CHAR = "K"
 BOOT_TIMEOUT_SECONDS = 20
 MONITOR_TIMEOUT_SECONDS = 20
 BYTE_PATTERN = re.compile(r"0x([0-9a-fA-F]{2})\b")
+
+
+@dataclass
+class Check:
+    addr: int
+    count: int
+    accept: Callable[[bytes], bool]
+    ok: str
+    fail: str
 
 
 def find_qemu() -> str | None:
@@ -75,7 +86,7 @@ def do_static(image: Path) -> int:
 
 
 def dump_region(
-    qemu: str, image: Path, addr: int, count: int, accept
+    qemu: str, image: Path, addr: int, count: int, accept: Callable[[bytes], bool]
 ) -> tuple[bool, bytes, str]:
     """启动 QEMU，轮询 xp 读取物理内存，返回（是否命中，最后一份内存，原始输出）。"""
     process = subprocess.Popen(
@@ -148,43 +159,50 @@ def do_smoke(image: Path, mode: str) -> int:
     if len(raw_image) < 2 * SECTOR:
         print(f"FAIL: {image} 不足两个扇区")
         return 1
+    expected = raw_image[SECTOR : 2 * SECTOR]
+
+    def sector_loaded(region: bytes) -> bool:
+        return region[:64] == expected[:64]
+
+    def kernel_ran(region: bytes) -> bool:
+        return KERNEL_CHAR in region[0::2].decode("ascii", errors="replace")
 
     if mode == "sector":
-        expected = raw_image[SECTOR : 2 * SECTOR]
-        addr, count = LOAD_ADDR, SECTOR
-
-        def accept(region: bytes) -> bool:
-            return region[:64] == expected[:64]
-
-        ok_message = (
-            f"PASS: QEMU 启动成功，int 0x13 已把第 2 扇区读入 "
-            f"0x{LOAD_ADDR:X}（前 64 字节与镜像一致）"
-        )
-        fail_message = f"FAIL: 0x{LOAD_ADDR:X} 处没有读到第 2 扇区的内容"
+        checks = [
+            Check(
+                LOAD_ADDR, SECTOR, sector_loaded,
+                f"PASS: QEMU 启动成功，int 0x13 已把第 2 扇区读入 0x{LOAD_ADDR:X}",
+                f"FAIL: 0x{LOAD_ADDR:X} 处没有读到第 2 扇区的内容",
+            ),
+        ]
     elif mode == "kernel":
-        addr, count = VGA_BASE, VGA_BYTES
-
-        def accept(region: bytes) -> bool:
-            return KERNEL_CHAR in region[0::2].decode("ascii", errors="replace")
-
-        ok_message = (
-            f"PASS: QEMU 启动成功，VGA 输出包含 {KERNEL_CHAR!r}"
-            "（引导扇区读盘并跳转到内核成功）"
-        )
-        fail_message = f"FAIL: VGA 缓冲区中没有找到内核字符 {KERNEL_CHAR!r}"
+        checks = [
+            Check(
+                LOAD_ADDR, SECTOR, sector_loaded,
+                f"PASS: 内核已由 int 0x13 读入 0x{LOAD_ADDR:X}",
+                f"FAIL: 0x{LOAD_ADDR:X} 处没有读到内核",
+            ),
+            Check(
+                VGA_BASE, VGA_BYTES, kernel_ran,
+                f"PASS: 跳转到内核成功，VGA 输出包含 {KERNEL_CHAR!r}",
+                f"FAIL: VGA 缓冲区中没有找到内核字符 {KERNEL_CHAR!r}",
+            ),
+        ]
     else:
         print(f"FAIL: 未知烟测模式 {mode!r}（可选 sector / kernel）")
         return 2
 
-    found, latest, raw = dump_region(qemu, image, addr, count, accept)
-    if found:
-        print(ok_message)
-        return 0
-
-    print(fail_message)
-    print("--- monitor 输出末尾 ---\n" + "\n".join(raw.strip().splitlines()[-20:]))
-    print(f"读取到的前 64 字节: {latest[:64].hex(' ')}")
-    return 1
+    for check in checks:
+        found, latest, raw = dump_region(
+            qemu, image, check.addr, check.count, check.accept
+        )
+        if not found:
+            print(check.fail)
+            print("--- monitor 输出末尾 ---\n" + "\n".join(raw.strip().splitlines()[-20:]))
+            print(f"读取到的前 64 字节: {latest[:64].hex(' ')}")
+            return 1
+        print(check.ok)
+    return 0
 
 
 def main(argv: list[str]) -> int:
