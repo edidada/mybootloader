@@ -1,0 +1,400 @@
+**能用到，而且王爽《汇编语言》介绍的很多指令，正是 BIOS、Bootloader、操作系统内核、UEFI 固件开发的基础。**
+
+但需要区分：**8086 汇编、现代 x86-64 汇编、BIOS 和 UEFI 固件开发之间既有继承关系，也有很大区别。**
+
+## 一、哪些底层开发场景会使用汇编？
+
+| 开发场景 | 是否使用汇编 | 常见用途 |
+|---|---|---|
+| 传统 BIOS | 是 | 硬件初始化、实模式代码、中断服务 |
+| UEFI 固件 | 少量使用 | CPU 初始化、启动入口、上下文切换 |
+| Bootloader | 经常使用 | CPU 模式切换、初始化栈、加载内核 |
+| Linux 内核 | 是 | 系统调用入口、中断入口、上下文切换 |
+| Windows 内核 | 是 | 中断、异常、底层 CPU 操作 |
+| 嵌入式裸机开发 | 经常使用 | 启动代码、中断向量、初始化 |
+| 设备驱动 | 少量使用 | 特殊 CPU 指令、硬件交互 |
+| C/C++ 普通应用 | 很少手写 | 性能优化、SIMD、特殊指令 |
+
+例如，现代 Linux 内核主要使用 C，也有部分 Rust 和汇编代码。
+
+汇编通常负责那些 **C 语言无法直接完成，或者必须精确控制 CPU 状态** 的工作。
+
+---
+
+## 二、王爽书中的指令，在 BIOS 开发中怎么使用？
+
+### 1. `jmp`：跳转到指定代码
+
+传统 BIOS 启动过程中，会使用跳转指令控制执行流程。
+
+例如：
+
+```asm
+bits 16
+
+start:
+    jmp init
+
+init:
+    mov ax, 0
+    mov ds, ax
+```
+
+这里使用 NASM 语法。
+
+在真正的启动代码中，`jmp` 还经常用于 CPU 模式切换后的控制流转移。
+
+例如：
+
+```asm
+jmp 0x08:protected_mode
+```
+
+这是一种远跳转形式，可在特定条件下用于进入保护模式后的代码段切换。
+
+不过，仅执行这条指令并不能完成保护模式切换。此前还需要正确配置 GDT、CR0 等。
+
+### 2. `int`：调用传统 BIOS 服务
+
+这是王爽书中的知识在传统 BIOS 环境下非常典型的应用。
+
+例如：
+
+```asm
+mov ah, 0x0E
+mov al, 'A'
+int 0x10
+```
+
+在支持相应 BIOS 服务的实模式环境中，这段代码通过 BIOS 视频服务输出字符 `A`。
+
+常见 BIOS 中断：
+
+| 中断 | 主要用途 |
+|---|---|
+| `int 10h` | 视频显示 |
+| `int 13h` | 磁盘服务 |
+| `int 15h` | 系统服务 |
+| `int 16h` | 键盘服务 |
+| `int 19h` | 引导服务 |
+
+注意：
+
+王爽书中经常出现：
+
+```asm
+mov ax,4c00h
+int 21h
+```
+
+这里的 `int 21h` 是 **DOS 操作系统提供的服务**，不是 BIOS 服务。
+
+如果你正在编写一个裸机 Bootloader，通常不能直接使用 DOS 的 `int 21h`。
+
+---
+
+## 三、写一个真正可以启动的汇编程序
+
+这是一个典型的 **16 位 BIOS Boot Sector（引导扇区）** 示例。
+
+它能在支持传统 BIOS 启动的虚拟机中运行。
+
+使用 NASM 汇编器：
+
+```asm
+bits 16
+org 0x7C00
+
+start:
+    ; 初始化段寄存器
+    cli
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0x7C00
+    sti
+
+    ; 输出字符串
+    mov si, message
+
+print_loop:
+    lodsb
+    cmp al, 0
+    je halt
+
+    mov ah, 0x0E
+    mov bx, 0x0007
+    int 0x10
+
+    jmp print_loop
+
+halt:
+    cli
+    hlt
+    jmp halt
+
+message:
+    db 'Hello BIOS!', 0
+
+; 填充到 510 字节
+times 510-($-$$) db 0
+
+; BIOS 启动扇区标志
+dw 0xAA55
+```
+
+### 编译
+
+安装 NASM 后：
+
+```bash
+nasm -f bin boot.asm -o boot.bin
+```
+
+生成 512 字节的启动扇区文件。
+
+### 使用 QEMU 运行
+
+```bash
+qemu-system-i386 -drive format=raw,file=boot.bin
+```
+
+需要使用支持传统 BIOS 启动的 QEMU 配置，而不是 UEFI-only 固件。
+
+运行后显示：
+
+```text
+Hello BIOS!
+```
+
+### 这个程序用了哪些王爽书中的知识？
+
+| 汇编指令 | 作用 |
+|---|---|
+| `mov` | 修改寄存器 |
+| `xor` | 清零 AX |
+| `cmp` | 判断字符串是否结束 |
+| `je` | 条件跳转 |
+| `jmp` | 无条件跳转 |
+| `int` | 调用 BIOS 视频服务 |
+| `lodsb` | 从 DS:SI 读取字符 |
+| `cli` | 禁止可屏蔽中断 |
+| `sti` | 允许可屏蔽中断 |
+| `hlt` | 暂停 CPU，等待唤醒事件 |
+
+这里的 `org`、`bits`、`db`、`dw`、`times` 属于 NASM 的汇编指示或伪指令，不是 CPU 指令。
+
+**你会发现，王爽书中的很多基础知识都直接派上了用场。**
+
+---
+
+## 四、现代 UEFI 和传统 BIOS 有什么不同？
+
+这是学习固件开发时非常重要的区别。
+
+### 传统 BIOS
+
+典型的传统 BIOS 启动流程：
+
+```text
+CPU 上电
+    ↓
+执行固件初始化代码
+    ↓
+BIOS 初始化硬件
+    ↓
+选择启动设备
+    ↓
+加载启动扇区到 0x7C00
+    ↓
+执行 16 位 Bootloader
+    ↓
+加载操作系统
+```
+
+传统 PC BIOS 引导扇区代码运行在 16 位实模式下。
+
+因此，王爽书中的：
+
+- AX、BX、CX、DX
+- CS、DS、SS、ES
+- IP、SP
+- `int`
+- `iret`
+- 分段寻址
+
+都非常相关。
+
+### 现代 UEFI
+
+UEFI 启动流程则不同：
+
+```text
+CPU 上电
+    ↓
+UEFI 固件初始化
+    ↓
+UEFI Boot Manager
+    ↓
+加载 EFI 应用程序
+    ↓
+操作系统 Bootloader
+    ↓
+操作系统内核
+```
+
+在常见的 x86-64 UEFI 环境中，EFI 应用程序运行在 64 位环境下。
+
+主要使用：
+
+```asm
+RAX
+RBX
+RCX
+RDX
+RSP
+RBP
+RIP
+```
+
+而不是仅使用 16 位的 AX、BX、IP。
+
+UEFI 应用程序通常通过 UEFI Boot Services、Runtime Services 等接口完成操作，而不是通过传统 BIOS 的 `int 10h`、`int 13h`。
+
+UEFI 固件和启动程序可以主要使用 C 语言开发，只有少量部分需要汇编。
+
+---
+
+## 五、如果想真正开发 BIOS 或 UEFI，应该学习什么？
+
+建议分成三个阶段。
+
+### 第一阶段：8086 汇编基础
+
+继续学习王爽《汇编语言》。
+
+重点：
+
+1. CPU 寄存器
+2. 内存分段
+3. 寻址方式
+4. 栈
+5. `jmp`
+6. `call` / `ret`
+7. `int` / `iret`
+8. FLAGS 标志寄存器
+
+目标：理解 CPU 如何执行指令、访问内存、调用子程序。
+
+### 第二阶段：Bootloader 开发
+
+建议学习：
+
+- NASM
+- QEMU
+- GDB
+- BIOS Boot Sector
+- GDT（全局描述符表）
+- IDT（中断描述符表）
+- CR0、CR3、CR4
+- 实模式、保护模式、长模式
+- 页表与分页机制
+
+可以参考：
+
+[OSDev Wiki](https://wiki.osdev.org/?utm_source=chatgpt.com)
+
+这是操作系统和 Bootloader 开发的重要社区资料。
+
+推荐先实现：
+
+**512 字节 Bootloader → 屏幕输出 → 读取磁盘 → 切换保护模式 → 加载 C 内核。**
+
+### 第三阶段：UEFI 固件开发
+
+可以研究以下开源项目。
+
+**1. [EDK II](https://github.com/tianocore/edk2?utm_source=chatgpt.com)**
+
+UEFI 固件开发框架。
+
+主要语言：
+
+- C
+- 汇编
+- Python（构建工具）
+
+涉及：
+
+- UEFI 驱动
+- 固件初始化
+- DXE
+- PEI
+- UEFI Boot Services
+
+**2. [coreboot](https://www.coreboot.org/?utm_source=chatgpt.com)**
+
+开源固件项目。
+
+主要用于硬件初始化，支持部分 PC、服务器和嵌入式平台。
+
+**3. [SeaBIOS](https://www.seabios.org/?utm_source=chatgpt.com)**
+
+开源传统 BIOS 实现。
+
+如果你想理解王爽书中的 16 位汇编在实际 BIOS 中如何使用，SeaBIOS 是很好的研究对象。
+
+**4. [GNU GRUB](https://www.gnu.org/software/grub/?utm_source=chatgpt.com)**
+
+开源 Bootloader。
+
+支持 BIOS 和 UEFI 等启动环境。
+
+---
+
+## 六、一个容易误解的地方
+
+**学习 8086 汇编，不等于掌握现代 BIOS/UEFI 开发。**
+
+王爽的书主要帮助你理解：
+
+```text
+汇编指令
+   ↓
+CPU 寄存器
+   ↓
+内存地址
+   ↓
+程序执行流程
+```
+
+现代固件开发还需要：
+
+```text
+CPU 架构
+   +
+汇编语言
+   +
+C 语言
+   +
+计算机体系结构
+   +
+PCI / PCIe
+   +
+内存初始化
+   +
+UEFI 规范
+   +
+硬件平台知识
+```
+
+### 我的建议
+
+考虑到你已经有 C/C++、Linux 开发基础，可以走一条实践路线：
+
+**王爽《汇编语言》 → NASM + QEMU → 512 字节 Bootloader → 32 位保护模式 → 64 位长模式 → UEFI EDK II。**
+
+这样可以从最简单的 8086 指令开始，一步步理解现代计算机从上电到操作系统启动的全过程。
+
+其中，**最值得先做的项目，就是用汇编写一个 512 字节的 BIOS Bootloader，并在 QEMU 中运行。** 这个实验能把书中的寄存器、分段、跳转、中断和内存寻址知识串联起来。
