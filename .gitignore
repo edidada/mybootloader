@@ -1,5 +1,5 @@
 # 构建产物
-boot.bin
+*.bin
 *.img
 build/
 dist/
