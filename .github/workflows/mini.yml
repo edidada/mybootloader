@@ -1,0 +1,43 @@
+name: Mini Bootblock CI
+
+# 仅在 mini 分支上触发：这一支只验证"打印一个字符 + 死循环"的最小引导块。
+on:
+  push:
+    branches: [mini]
+  pull_request:
+    branches: [mini]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-run:
+    name: Build and run mini bootblock
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install NASM and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm qemu-system-x86
+
+      - name: Build 512-byte boot sector
+        run: make -C mini build
+
+      - name: Verify image structure
+        run: make -C mini test
+
+      - name: Boot in QEMU and check VGA output
+        env:
+          REQUIRE_QEMU: "1"
+        run: make -C mini smoke
+
+      - name: Upload boot image
+        uses: actions/upload-artifact@v7
+        with:
+          name: mini-boot-bin
+          path: mini/boot.bin
+          if-no-files-found: error
